@@ -31,6 +31,7 @@ class StopWatchTimer {
     this.isLapHours = true,
     this.mode = StopWatchMode.countUp,
     int presetMillisecond = 0,
+    this.refreshTime = 500,
     this.onChange,
     this.onChangeRawSecond,
     this.onChangeRawMinute,
@@ -72,6 +73,7 @@ class StopWatchTimer {
   }
 
   final bool hasNegativeCountdown;
+  final int refreshTime;
   final bool isLapHours;
   final StopWatchMode mode;
   final void Function(int)? onChange;
@@ -305,22 +307,20 @@ class StopWatchTimer {
     }
   }
 
-  int _getCountUpTime(int presetTime) {
-    return DateTime.now().millisecondsSinceEpoch -
-        _startTime +
-        _stopTime +
-        presetTime;
-  }
+  int _getCountUpTime(int presetTime) =>
+      DateTime.now().millisecondsSinceEpoch -
+      _startTime +
+      _stopTime +
+      presetTime;
 
-  int _getCountDownTime(int presetTime) {
-    return presetTime -
-        (DateTime.now().millisecondsSinceEpoch - _startTime + _stopTime);
-  }
+  int _getCountDownTime(int presetTime) =>
+      presetTime -
+      (DateTime.now().millisecondsSinceEpoch - _startTime + _stopTime);
 
   void _start() {
     if (!isRunning) {
       _startTime = DateTime.now().millisecondsSinceEpoch;
-      _timer = Timer.periodic(const Duration(milliseconds: 500), _handle);
+      _timer = Timer.periodic(Duration(milliseconds: refreshTime), _handle);
     }
   }
 
