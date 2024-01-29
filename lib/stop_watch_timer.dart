@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:rxdart/rxdart.dart';
@@ -32,12 +31,12 @@ class StopWatchTimer {
     this.isLapHours = true,
     this.mode = StopWatchMode.countUp,
     int presetMillisecond = 0,
-    this.refreshTime = 1,
     this.onChange,
     this.onChangeRawSecond,
     this.onChangeRawMinute,
     this.onStopped,
     this.onEnded,
+    this.hasNegativeCountdown = false,
   }) {
     /// Set presetTime
     _presetTime = presetMillisecond;
@@ -72,12 +71,12 @@ class StopWatchTimer {
     });
   }
 
+  final bool hasNegativeCountdown;
   final bool isLapHours;
   final StopWatchMode mode;
-  final int refreshTime;
-  final Function(int)? onChange;
-  final Function(int)? onChangeRawSecond;
-  final Function(int)? onChangeRawMinute;
+  final void Function(int)? onChange;
+  final void Function(int)? onChangeRawSecond;
+  final void Function(int)? onChangeRawMinute;
   final VoidCallback? onStopped;
   final VoidCallback? onEnded;
 
@@ -131,53 +130,57 @@ class StopWatchTimer {
     final sStr = getDisplayTimeSecond(value);
     final msStr = getDisplayTimeMillisecond(value);
     var result = '';
+    if (value < 0) {
+      result += '-';
+    }
     if (hours) {
-      result += '$hoursStr';
+      result += hoursStr;
     }
     if (minute) {
       if (hours) {
         result += hoursRightBreak;
       }
-      result += '$mStr';
+      result += mStr;
     }
     if (second) {
       if (minute) {
         result += minuteRightBreak;
       }
-      result += '$sStr';
+      result += sStr;
     }
     if (milliSecond) {
       if (second) {
         result += secondRightBreak;
       }
-      result += '$msStr';
+      result += msStr;
     }
+
     return result;
   }
 
   /// Get display hours time.
   static String getDisplayTimeHours(int mSec) {
-    return getRawHours(mSec).floor().toString().padLeft(2, '0');
+    return getRawHours(mSec.abs()).toString().padLeft(2, '0');
   }
 
   /// Get display minute time.
   static String getDisplayTimeMinute(int mSec, {bool hours = false}) {
     if (hours) {
-      return getMinute(mSec).floor().toString().padLeft(2, '0');
+      return getMinute(mSec.abs()).toString().padLeft(2, '0');
     } else {
-      return getRawMinute(mSec).floor().toString().padLeft(2, '0');
+      return getRawMinute(mSec.abs()).toString().padLeft(2, '0');
     }
   }
 
   /// Get display second time.
   static String getDisplayTimeSecond(int mSec) {
-    final s = (mSec % 60000 / 1000).floor();
+    final s = (mSec.abs() % 60000 / 1000).floor();
     return s.toString().padLeft(2, '0');
   }
 
   /// Get display millisecond time.
   static String getDisplayTimeMillisecond(int mSec) {
-    final ms = (mSec % 1000 / 10).floor();
+    final ms = (mSec.abs() % 1000 / 10).floor();
     return ms.toString().padLeft(2, '0');
   }
 
@@ -196,13 +199,13 @@ class StopWatchTimer {
   static int getRawSecond(int milliSecond) => (milliSecond / 1000).floor();
 
   /// Get milli second from hour
-  static int getMilliSecFromHour(int hour) => (hour * (3600 * 1000)).floor();
+  static int getMilliSecFromHour(int hour) => hour * (3600 * 1000);
 
   /// Get milli second from minute
-  static int getMilliSecFromMinute(int minute) => (minute * 60000).floor();
+  static int getMilliSecFromMinute(int minute) => minute * 60000;
 
   /// Get milli second from second
-  static int getMilliSecFromSecond(int second) => (second * 1000).floor();
+  static int getMilliSecFromSecond(int second) => second * 1000;
 
   /// When finish running timer, it need to dispose.
   Future<void> dispose() async {
@@ -290,36 +293,40 @@ class StopWatchTimer {
     } else if (mode == StopWatchMode.countDown) {
       final time = _getCountDownTime(_presetTime);
       _elapsedTime.add(time);
-      if (time == 0) {
-        _stop();
-        _onEndedController.add(true);
-        onEnded?.call();
+      if (hasNegativeCountdown) {
+        if (time == 0) {
+          _stop();
+          _onEndedController.add(true);
+          onEnded?.call();
+        }
       }
     } else {
       throw Exception('No support mode');
     }
   }
 
-  int _getCountUpTime(int presetTime) =>
-      DateTime.now().millisecondsSinceEpoch -
-      _startTime +
-      _stopTime +
-      presetTime;
+  int _getCountUpTime(int presetTime) {
+    return DateTime.now().millisecondsSinceEpoch -
+        _startTime +
+        _stopTime +
+        presetTime;
+  }
 
-  int _getCountDownTime(int presetTime) => max(
-        presetTime -
-            (DateTime.now().millisecondsSinceEpoch - _startTime + _stopTime),
-        0,
-      );
+  int _getCountDownTime(int presetTime) {
+    return presetTime -
+        (DateTime.now().millisecondsSinceEpoch - _startTime + _stopTime);
+  }
 
   void _start() {
     if (!isRunning) {
       _startTime = DateTime.now().millisecondsSinceEpoch;
-      _timer = Timer.periodic(Duration(milliseconds: refreshTime), _handle);
+      _timer = Timer.periodic(const Duration(milliseconds: 500), _handle);
     }
   }
 
   bool _stop() {
+    _rawTimeController.add(0);
+
     if (isRunning) {
       _timer?.cancel();
       _timer = null;
@@ -356,13 +363,15 @@ class StopWatchTimer {
   void _lap() {
     if (isRunning) {
       final rawValue = _rawTimeController.value;
-      _records.add(StopWatchRecord(
-        rawValue: rawValue,
-        hours: getRawHours(rawValue),
-        minute: getRawMinute(rawValue),
-        second: getRawSecond(rawValue),
-        displayTime: getDisplayTime(rawValue, hours: isLapHours),
-      ));
+      _records.add(
+        StopWatchRecord(
+          rawValue: rawValue,
+          hours: getRawHours(rawValue),
+          minute: getRawMinute(rawValue),
+          second: getRawSecond(rawValue),
+          displayTime: getDisplayTime(rawValue, hours: isLapHours),
+        ),
+      );
       _recordsController.add(_records);
     }
   }
